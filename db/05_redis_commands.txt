@@ -1,0 +1,17 @@
+# [TV2 + TV3 - Giai đoạn 1] Bộ lệnh thực hành trực tiếp trên Redis Insight (Memurai 127.0.0.1:6379)
+
+# 1. Kiểm tra kết nối & danh sách key
+PING
+KEYS *
+
+# 2. Kiểm tra giữ chỗ bàn & TTL (TV1 đã nạp sẵn demo T03)
+# TTL lock:table:RES01:T03:YYYY-MM-DD:19:00
+
+# 3. Kiểm tra hàng đợi Waitlist (List) & Giỏ hàng mẫu (Hash)
+HGETALL cart:USR001
+
+# 4. Kiểm tra Bảng xếp hạng Sorted Set
+ZREVRANGE ranking:menu_items 0 4 WITHSCORES
+ZREVRANGE ranking:restaurants 0 -1 WITHSCORES
+
+# TODO (TV2 + TV3): Bổ sung thêm các lệnh thực hành Hash session:*, String cache:menu:*, BGSAVE...

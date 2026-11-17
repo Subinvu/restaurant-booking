@@ -1,0 +1,19 @@
+# Visual Studio / .NET build artifacts
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+TestResults/
+*.log
+
+# Local secrets / environment overrides
+.env
+
+# Runtime database dump files (keep .gitkeep only)
+db/backup/*
+!db/backup/.gitkeep
+*.rdb
+*.aof
