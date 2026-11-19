@@ -1,17 +1,83 @@
 # [TV2 + TV3 - Giai đoạn 1] Bộ lệnh thực hành trực tiếp trên Redis Insight (Memurai 127.0.0.1:6379)
 
-# 1. Kiểm tra kết nối & danh sách key
+# ----------------------------------------------------------------------
+# 1. Kiểm tra kết nối & khám phá toàn bộ Key đang có
+# ----------------------------------------------------------------------
 PING
+DBSIZE
 KEYS *
 
-# 2. Kiểm tra giữ chỗ bàn & TTL (TV1 đã nạp sẵn demo T03)
-# TTL lock:table:RES01:T03:YYYY-MM-DD:19:00
+# Kiểm tra kiểu dữ liệu từng nhóm Key chuẩn (String / Hash / List / Sorted Set)
+TYPE ranking:menu_items
+TYPE ranking:restaurants
+TYPE views:restaurant:RES01
+TYPE cart:USR001
 
-# 3. Kiểm tra hàng đợi Waitlist (List) & Giỏ hàng mẫu (Hash)
-HGETALL cart:USR001
+# ----------------------------------------------------------------------
+# 2. [TV2] Thực hành Cache-Aside Thực đơn & Bộ đếm lượt xem (String + TTL)
+# ----------------------------------------------------------------------
+# Kiểm tra lượt xem chi nhánh & tăng bộ đếm lượt xem
+GET views:restaurant:RES01
+INCR views:restaurant:RES01
+GET views:restaurant:RES01
 
-# 4. Kiểm tra Bảng xếp hạng Sorted Set
+# Kiểm tra cache thực đơn (sau khi mở FrmAdmin bấm "Test đọc Menu (Cache)")
+GET cache:menu:RES01
+TTL cache:menu:RES01
+
+# Demo ghi đè cache thủ công với Random TTL (ví dụ 330 giây) và xóa cache khi sửa món
+SET cache:menu:DEMO "{\"item_code\":\"MN999\",\"name\":\"Test Cache\"}" EX 330
+TTL cache:menu:DEMO
+DEL cache:menu:DEMO
+
+# ----------------------------------------------------------------------
+# 3. [TV2] Thực hành Bảng xếp hạng Món ăn & Chi nhánh (Sorted Set - ZSET)
+# ----------------------------------------------------------------------
+# Top 5 món ăn được đặt nhiều nhất (điểm cao -> thấp)
 ZREVRANGE ranking:menu_items 0 4 WITHSCORES
+
+# Xếp hạng toàn bộ chi nhánh theo số lượng đơn
 ZREVRANGE ranking:restaurants 0 -1 WITHSCORES
 
-# TODO (TV2 + TV3): Bổ sung thêm các lệnh thực hành Hash session:*, String cache:menu:*, BGSAVE...
+# Tra điểm & thứ hạng cụ thể của 1 món / 1 chi nhánh
+ZSCORE ranking:menu_items MN001
+ZREVRANK ranking:menu_items MN001
+ZSCORE ranking:restaurants RES01
+
+# Mô phỏng tăng điểm xếp hạng khi có thêm đơn mới
+ZINCRBY ranking:restaurants 1 RES01
+ZSCORE ranking:restaurants RES01
+
+# ----------------------------------------------------------------------
+# 4. [TV1] Kiểm tra Giữ chỗ bàn TTL 15 phút & Hàng đợi Waitlist (String/List)
+# ----------------------------------------------------------------------
+KEYS lock:table:*
+# Thay YYYY-MM-DD bằng ngày hôm nay để xem TTL còn lại (giây)
+# TTL lock:table:RES01:T03:YYYY-MM-DD:19:00
+
+KEYS waitlist:*
+# Xem danh sách khách đang chờ ở slot mẫu
+# LRANGE waitlist:RES01:YYYY-MM-DD:19:00 0 -1
+
+# ----------------------------------------------------------------------
+# 5. [TV3] Kiểm tra Giỏ hàng (Hash) & Phiên đăng nhập (Hash + TTL)
+# ----------------------------------------------------------------------
+HGETALL cart:USR001
+HLEN cart:USR001
+HKEYS cart:USR001
+
+# Xem các session đang đăng nhập (sau khi đăng nhập qua FrmLogin)
+KEYS session:*
+# HGETALL session:<token>
+# TTL session:<token>
+
+# ----------------------------------------------------------------------
+# 6. [TV2] Kiểm tra Persistence RDB + AOF & Tạo bản sao lưu Memurai (BGSAVE)
+# ----------------------------------------------------------------------
+CONFIG GET dir
+CONFIG GET dbfilename
+CONFIG GET appendonly
+CONFIG GET appenddirname
+LASTSAVE
+BGSAVE
+INFO persistence
