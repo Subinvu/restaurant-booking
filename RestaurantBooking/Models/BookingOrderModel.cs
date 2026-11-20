@@ -29,6 +29,14 @@ public class BookingOrderModel
     [BsonElement("table_id")]
     public string? TableId { get; set; }
 
+    [BsonElement("delivery_address")]
+    [BsonIgnoreIfNull]
+    public string? DeliveryAddress { get; set; }
+
+    [BsonElement("note")]
+    [BsonIgnoreIfNull]
+    public string? Note { get; set; }
+
     /// <summary>Định dạng chuẩn "YYYY-MM-DD".</summary>
     [BsonElement("booking_date")]
     public string BookingDate { get; set; } = string.Empty;

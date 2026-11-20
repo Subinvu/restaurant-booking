@@ -60,13 +60,27 @@ KEYS waitlist:*
 # LRANGE waitlist:RES01:YYYY-MM-DD:19:00 0 -1
 
 # ----------------------------------------------------------------------
-# 5. [TV3] Kiểm tra Giỏ hàng (Hash) & Phiên đăng nhập (Hash + TTL)
+# 5. [TV3] Kiểm tra Giỏ hàng (Hash) & Phiên đăng nhập (Hash + TTL 24h)
 # ----------------------------------------------------------------------
+# Đọc toàn bộ món đang có trong giỏ hàng của USR001
 HGETALL cart:USR001
 HLEN cart:USR001
 HKEYS cart:USR001
+HGET cart:USR001 MN001_S
 
-# Xem các session đang đăng nhập (sau khi đăng nhập qua FrmLogin)
+# Demo thao tác thêm/xóa món trực tiếp vào giỏ hàng Hash
+HSET cart:DEMO MN006_L "{\"item_code\":\"MN006\",\"name\":\"Lẩu Thái Tomyum hải sản\",\"size_code\":\"L\",\"toppings\":[\"Thêm ba chỉ bò Mỹ\"],\"qty\":1,\"unit_price\":405000}"
+HGETALL cart:DEMO
+HDEL cart:DEMO MN006_L
+
+# Demo tạo & kiểm tra phiên đăng nhập Hash + TTL 86400s (24 giờ)
+HSET session:demo_token_tv3 user_code USR001 full_name "Nguyễn Văn An" role customer email "an.nguyen@huit.edu.vn"
+EXPIRE session:demo_token_tv3 86400
+HGETALL session:demo_token_tv3
+TTL session:demo_token_tv3
+DEL session:demo_token_tv3
+
+# Xem các session thật đang đăng nhập (sau khi đăng nhập qua FrmLogin)
 KEYS session:*
 # HGETALL session:<token>
 # TTL session:<token>

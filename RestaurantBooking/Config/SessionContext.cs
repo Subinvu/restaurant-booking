@@ -3,8 +3,9 @@ using RestaurantBooking.Models;
 namespace RestaurantBooking.Config;
 
 /// <summary>
-/// Quản lý phiên đăng nhập hiện tại trên WinForms và cung cấp chế độ Dev Fallback
-/// để các thành viên test độc lập ngay từ Ngày 1 mà không cần chờ FrmLogin.
+/// Quản lý phiên đăng nhập hiện tại trên WinForms.
+/// Mặc định khởi động ở trạng thái chưa đăng nhập (như app thương mại),
+/// đồng thời cung cấp các hàm Dev Fallback khi bật Chế độ Demo Giảng viên.
 /// </summary>
 public static class SessionContext
 {
@@ -12,19 +13,14 @@ public static class SessionContext
     public static string FullName { get; private set; } = string.Empty;
     public static string Email { get; private set; } = string.Empty;
     public static string Phone { get; private set; } = string.Empty;
-    public static string Role { get; private set; } = "customer";
+    public static string Role { get; private set; } = string.Empty;
     public static string SessionToken { get; private set; } = string.Empty;
-    public static bool IsDevFallback { get; private set; } = true;
+    public static bool IsDevFallback { get; private set; }
 
     public static bool IsLoggedIn => !string.IsNullOrWhiteSpace(UserCode);
     public static bool IsAdmin => string.Equals(Role, "admin", StringComparison.OrdinalIgnoreCase);
     public static bool IsStaffOrAdmin =>
         IsAdmin || string.Equals(Role, "staff", StringComparison.OrdinalIgnoreCase);
-
-    static SessionContext()
-    {
-        UseDevCustomer();
-    }
 
     public static void SetAuthenticatedUser(UserModel user, string token)
     {

@@ -259,14 +259,23 @@ partial class FrmAdmin
         lblInfo.Text = "Quản trị hệ thống nhà hàng — Quản trị viên";
 
         // ====================== TAB 1 ======================
+        tabRestaurantMenu.Location = new Point(4, 24);
+        tabRestaurantMenu.Name = "tabRestaurantMenu";
         tabRestaurantMenu.Padding = new Padding(6);
+        tabRestaurantMenu.Size = new Size(1232, 694);
         tabRestaurantMenu.Text = "Nhà hàng, bàn && thực đơn";
 
         splitMain.Dock = DockStyle.Fill;
+        splitMain.Name = "splitMain";
         splitMain.Orientation = Orientation.Vertical;
+        splitMain.Size = new Size(1220, 682);
+        splitMain.SplitterDistance = 540;
 
         splitLeft.Dock = DockStyle.Fill;
+        splitLeft.Name = "splitLeft";
         splitLeft.Orientation = Orientation.Horizontal;
+        splitLeft.Size = new Size(540, 682);
+        splitLeft.SplitterDistance = 355;
 
         // Group 1: Restaurants
         grpRestaurants.Dock = DockStyle.Fill;
@@ -557,7 +566,10 @@ partial class FrmAdmin
         tabRestaurantMenu.Controls.Add(splitMain);
 
         // ====================== TAB 2 ======================
+        tabStatistics.Location = new Point(4, 24);
+        tabStatistics.Name = "tabStatistics";
         tabStatistics.Padding = new Padding(6);
+        tabStatistics.Size = new Size(1232, 694);
         tabStatistics.Text = "Báo cáo && thống kê kinh doanh";
 
         tlpKpi.ColumnCount = 4;
@@ -601,7 +613,10 @@ partial class FrmAdmin
         pnlStatFilter.Controls.AddRange([lblStatPick, cboStatQuery, lblStatRes, cboStatBranch, btnRunStat]);
 
         splitStats.Dock = DockStyle.Fill;
+        splitStats.Name = "splitStats";
         splitStats.Orientation = Orientation.Vertical;
+        splitStats.Size = new Size(1220, 576);
+        splitStats.SplitterDistance = 635;
 
         ConfigureGrid(dgvStats);
         dgvStats.Dock = DockStyle.Fill;
@@ -619,7 +634,10 @@ partial class FrmAdmin
         tabStatistics.Controls.Add(tlpKpi);
 
         // ====================== TAB 3 ======================
+        tabBackup.Location = new Point(4, 24);
+        tabBackup.Name = "tabBackup";
         tabBackup.Padding = new Padding(8);
+        tabBackup.Size = new Size(1232, 694);
         tabBackup.Text = "Sao lưu && phục hồi dữ liệu";
 
         grpBackupPaths.Dock = DockStyle.Top;
@@ -628,32 +646,32 @@ partial class FrmAdmin
 
         var lblBkFolder = MakeLabel("Thư mục lưu:", 14, 28);
         txtBackupFolder.Location = new Point(112, 25);
-        txtBackupFolder.Size = new Size(760, 23);
+        txtBackupFolder.Size = new Size(710, 23);
 
-        btnBrowseBackupFolder.Location = new Point(880, 23);
+        btnBrowseBackupFolder.Location = new Point(830, 23);
         btnBrowseBackupFolder.Size = new Size(135, 27);
         btnBrowseBackupFolder.Text = "Chọn thư mục...";
 
-        btnOpenBackupFolder.Location = new Point(1023, 23);
+        btnOpenBackupFolder.Location = new Point(973, 23);
         btnOpenBackupFolder.Size = new Size(135, 27);
         btnOpenBackupFolder.Text = "Mở thư mục";
 
         var lblCol = MakeLabel("Bảng dữ liệu:", 14, 64);
         cboExportCollection.DropDownStyle = ComboBoxStyle.DropDownList;
         cboExportCollection.Location = new Point(112, 61);
-        cboExportCollection.Size = new Size(215, 23);
+        cboExportCollection.Size = new Size(245, 23);
 
-        var lblJsonFile = MakeLabel("Tập tin JSON:", 338, 64);
-        txtImportJsonFile.Location = new Point(424, 61);
+        var lblJsonFile = MakeLabel("Tập tin JSON:", 368, 64);
+        txtImportJsonFile.Location = new Point(454, 61);
         txtImportJsonFile.PlaceholderText = "Chọn tập tin .json để nhập vào bảng...";
-        txtImportJsonFile.Size = new Size(448, 23);
+        txtImportJsonFile.Size = new Size(368, 23);
 
-        btnBrowseImportFile.Location = new Point(880, 59);
+        btnBrowseImportFile.Location = new Point(830, 59);
         btnBrowseImportFile.Size = new Size(135, 27);
         btnBrowseImportFile.Text = "Chọn tập tin .json...";
 
         chkImportDrop.AutoSize = true;
-        chkImportDrop.Location = new Point(1023, 63);
+        chkImportDrop.Location = new Point(973, 63);
         chkImportDrop.Text = "Xóa dữ liệu cũ trước khi nhập";
 
         grpBackupPaths.Controls.AddRange([

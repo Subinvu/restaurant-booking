@@ -43,6 +43,36 @@ public partial class FrmAdmin : Form
         WireEvents();
         InitializeStaticDropdowns();
         ConfigureFriendlyTooltips();
+        ConfigureUnifiedNavigationAndTabs();
+    }
+
+    private void ConfigureUnifiedNavigationAndTabs()
+    {
+        lblInfo.BackColor = UiTheme.HeaderBg;
+        lblInfo.UseMnemonic = false;
+        lblInfo.Height = 46;
+        lblInfo.Padding = new Padding(14, 12, 148, 8);
+
+        var btnBack = new Button
+        {
+            Name = "btnAdminBack",
+            Text = "← Quay lại",
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+            Size = new Size(120, 32),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            Location = new Point(lblInfo.Width - 134, 7)
+        };
+        UiTheme.StyleHeaderBackButton(btnBack);
+        btnBack.Click += (_, _) => Close();
+        lblInfo.Controls.Add(btnBack);
+
+        UiTheme.StyleTabControl(tabAdmin);
+        foreach (var grid in new[] { dgvRestaurants, dgvTables, dgvMenuItems, dgvStats })
+        {
+            UiTheme.StyleGrid(grid);
+            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
+            grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(2, 0, 2, 0);
+        }
     }
 
     private void WireEvents()
@@ -212,18 +242,19 @@ public partial class FrmAdmin : Form
     {
         try
         {
-            if (splitMain.Width >= 820)
+            if (splitMain.Width >= 900)
             {
+                int desiredLeft = Math.Max((int)(splitMain.Width * 0.44), btnTableDelete.Right + 20);
                 splitMain.Panel1MinSize = 360;
                 splitMain.Panel2MinSize = 420;
-                splitMain.SplitterDistance = Math.Clamp((int)(splitMain.Width * 0.44), 360, splitMain.Width - 420);
+                splitMain.SplitterDistance = Math.Clamp(desiredLeft, 360, splitMain.Width - 420);
             }
 
             if (splitLeft.Height >= 380)
             {
                 splitLeft.Panel1MinSize = 180;
                 splitLeft.Panel2MinSize = 160;
-                splitLeft.SplitterDistance = Math.Clamp((int)(splitLeft.Height * 0.52), 180, splitLeft.Height - 160);
+                splitLeft.SplitterDistance = Math.Clamp((int)(splitLeft.Height * 0.54), 180, splitLeft.Height - 160);
             }
 
             if (splitStats.Width >= 680)
@@ -1353,9 +1384,10 @@ public partial class FrmAdmin : Form
             AppendBackupLog("Khôi phục dữ liệu chính (mongorestore)", res);
             if (res.Success)
             {
+                await _menuService.InvalidateAllMenuCachesAsync();
                 await LoadTab1DataAsync();
                 await RunSelectedStatisticAsync();
-                MessageBox.Show("Khôi phục dữ liệu thành công và đã cập nhật lại màn hình.", "Khôi phục dữ liệu", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Khôi phục dữ liệu thành công và đã làm mới bộ nhớ đệm thực đơn.", "Khôi phục dữ liệu", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
             {
@@ -1422,9 +1454,10 @@ public partial class FrmAdmin : Form
             AppendBackupLog($"Nhập dữ liệu từ tập tin JSON vào bảng '{collection}' (mongoimport)", res);
             if (res.Success)
             {
+                await _menuService.InvalidateAllMenuCachesAsync();
                 await LoadTab1DataAsync();
                 await RunSelectedStatisticAsync();
-                MessageBox.Show($"Nhập dữ liệu từ tập tin JSON vào bảng '{collection}' thành công.", "Nhập JSON", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show($"Nhập dữ liệu từ tập tin JSON vào bảng '{collection}' thành công và đã làm mới bộ nhớ đệm.", "Nhập JSON", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
             {

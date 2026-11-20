@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -37,6 +38,9 @@ public sealed class CartItemDto
 
     [JsonPropertyName("item_code")]
     public string ItemCode { get; set; } = string.Empty;
+
+    [JsonPropertyName("restaurant_code")]
+    public string RestaurantCode { get; set; } = string.Empty;
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
@@ -222,6 +226,14 @@ public class BookingService
 
         _db.Initialize();
 
+        var restaurant = await _db.Restaurants.Find(r => r.RestaurantCode == restaurantCode && r.IsActive).FirstOrDefaultAsync();
+        if (restaurant == null)
+            return ServiceResult<int>.Fail($"Chi nhánh {restaurantCode} không tồn tại hoặc đã ngưng hoạt động.");
+
+        var slotCheck = ValidateSlotDateTimeAndHours(restaurant, bookingDate, timeSlot);
+        if (!slotCheck.Success)
+            return ServiceResult<int>.Fail(slotCheck.Message);
+
         var isTableBooked = await HasActiveMongoBookingAsync(restaurantCode, tableId, bookingDate, timeSlot);
         if (isTableBooked)
             return ServiceResult<int>.Fail($"Bàn {tableId} đã được đặt trong khung giờ {timeSlot} ngày {bookingDate}.");
@@ -246,9 +258,8 @@ public class BookingService
                 remaining);
         }
 
-        var holderText = currentLock.Value.IsNullOrEmpty ? "người khác" : currentLock.Value.ToString();
         return ServiceResult<int>.Fail(
-            $"Bàn {tableId} đang được {holderText} giữ tạm (còn {remaining / 60:00}:{remaining % 60:00}).");
+            $"Bàn này đang được khách khác giữ tạm (còn {remaining / 60:00}:{remaining % 60:00}).");
     }
 
     /// <summary>
@@ -312,6 +323,15 @@ public class BookingService
             return ServiceResult<long>.Fail("Chưa xác định tài khoản khách hàng.");
 
         _db.Initialize();
+
+        var restaurant = await _db.Restaurants.Find(r => r.RestaurantCode == restaurantCode && r.IsActive).FirstOrDefaultAsync();
+        if (restaurant == null)
+            return ServiceResult<long>.Fail($"Chi nhánh {restaurantCode} không tồn tại hoặc đã ngưng hoạt động.");
+
+        var slotCheck = ValidateSlotDateTimeAndHours(restaurant, bookingDate, timeSlot);
+        if (!slotCheck.Success)
+            return ServiceResult<long>.Fail(slotCheck.Message);
+
         var waitlistKey = RedisKeys.Waitlist(restaurantCode, bookingDate, timeSlot);
 
         var existingEntries = await _db.RedisDb.ListRangeAsync(waitlistKey);
@@ -378,16 +398,32 @@ public class BookingService
         string? voucherCode,
         string customerUserCode,
         string customerFullName,
-        string customerPhone)
+        string customerPhone,
+        string? deliveryAddress = null,
+        string? note = null)
     {
         if (string.IsNullOrWhiteSpace(customerUserCode))
             return ServiceResult<BookingOrderModel>.Fail("Chưa có thông tin khách hàng.");
 
         _db.Initialize();
 
-        var cartItems = await GetCartItemsAsync(customerUserCode);
-        if (orderType == "takeaway" && cartItems.Count == 0)
-            return ServiceResult<BookingOrderModel>.Fail("Đơn mang về cần có ít nhất 1 món ăn trong giỏ hàng Memurai.");
+        var restaurant = await _db.Restaurants.Find(r => r.RestaurantCode == restaurantCode && r.IsActive).FirstOrDefaultAsync();
+        if (restaurant == null)
+            return ServiceResult<BookingOrderModel>.Fail($"Chi nhánh {restaurantCode} không tồn tại hoặc đã ngưng hoạt động.");
+
+        var slotCheck = ValidateSlotDateTimeAndHours(restaurant, bookingDate, timeSlot);
+        if (!slotCheck.Success)
+            return ServiceResult<BookingOrderModel>.Fail(slotCheck.Message);
+
+        var rawCartItems = await GetCartItemsAsync(customerUserCode);
+        if (orderType == "takeaway" && rawCartItems.Count == 0)
+            return ServiceResult<BookingOrderModel>.Fail("Đơn mang về cần có ít nhất 1 món ăn trong giỏ hàng.");
+
+        // Đối chiếu lại từng món trong giỏ với MongoDB menu_items: đúng chi nhánh, còn mở bán và dùng giá mới nhất.
+        var verifiedCart = await VerifyAndRepriceCartAsync(rawCartItems, restaurantCode);
+        if (!verifiedCart.Success)
+            return ServiceResult<BookingOrderModel>.Fail(verifiedCart.Message);
+        var cartItems = verifiedCart.Data!;
 
         string? acquiredLockKey = null;
         bool acquiredTempLockHere = false;
@@ -397,8 +433,7 @@ public class BookingService
             if (string.IsNullOrWhiteSpace(tableId))
                 return ServiceResult<BookingOrderModel>.Fail("Vui lòng chọn một bàn trống hoặc bàn bạn đang giữ.");
 
-            var restaurant = await _db.Restaurants.Find(r => r.RestaurantCode == restaurantCode).FirstOrDefaultAsync();
-            var table = restaurant?.Tables.FirstOrDefault(t => t.TableId == tableId);
+            var table = restaurant.Tables.FirstOrDefault(t => t.TableId == tableId);
             if (table == null || !table.IsAvailable)
                 return ServiceResult<BookingOrderModel>.Fail($"Bàn {tableId} không tồn tại hoặc đang ngưng phục vụ.");
 
@@ -409,7 +444,7 @@ public class BookingService
             var existingHolder = await _db.RedisDb.StringGetAsync(acquiredLockKey);
 
             if (!existingHolder.IsNullOrEmpty && existingHolder != customerUserCode)
-                return ServiceResult<BookingOrderModel>.Fail($"Bàn {tableId} đang được người dùng {existingHolder} giữ chỗ.");
+                return ServiceResult<BookingOrderModel>.Fail($"Bàn {table.TableName} đang được khách hàng khác giữ chỗ.");
 
             // Nếu khách bấm Chốt đơn ngay trên bàn Xanh chưa khóa, vẫn chiếm khóa tạm ngắn để ngăn race condition.
             if (existingHolder.IsNullOrEmpty)
@@ -447,6 +482,8 @@ public class BookingService
                 },
                 RestaurantCode = restaurantCode,
                 TableId = orderType == "dine_in" ? tableId : null,
+                DeliveryAddress = string.IsNullOrWhiteSpace(deliveryAddress) ? null : deliveryAddress.Trim(),
+                Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
                 BookingDate = bookingDate,
                 TimeSlot = timeSlot,
                 GuestCount = guestCount,
@@ -525,10 +562,16 @@ public class BookingService
             .ToListAsync();
     }
 
-    public async Task<ServiceResult> UpdateOrderStatusAsync(string orderCode, string newStatus)
+    public async Task<ServiceResult> UpdateOrderStatusAsync(
+        string orderCode,
+        string newStatus,
+        bool? actingIsStaffOrAdmin = null)
     {
+        if (!(actingIsStaffOrAdmin ?? SessionContext.IsStaffOrAdmin))
+            return ServiceResult.Fail("Chỉ Nhân viên hoặc Quản trị viên mới có quyền duyệt trạng thái đơn hàng.");
+
         if (string.Equals(newStatus, "cancelled", StringComparison.OrdinalIgnoreCase))
-            return ServiceResult.Fail("Vui lòng dùng chức năng Hủy đơn để hệ thống tự động rút Waitlist.");
+            return ServiceResult.Fail("Vui lòng dùng chức năng Hủy đơn để hệ thống tự động rút danh sách chờ.");
 
         _db.Initialize();
         var order = await _db.BookingsOrders.Find(o => o.OrderCode == orderCode).FirstOrDefaultAsync();
@@ -548,14 +591,35 @@ public class BookingService
     }
 
     /// <summary>
-    /// Hủy đơn trên MongoDB và tự động RPOP khách chờ đầu tiên từ Waitlist trên Memurai để nhường bàn.
+    /// Hủy đơn trên MongoDB (kiểm tra quyền sở hữu / vai trò) và tự động RPOP khách chờ đầu tiên từ Waitlist trên Memurai.
     /// </summary>
-    public async Task<ServiceResult<WaitlistEntryDto?>> CancelOrderAndPopWaitlistAsync(string orderCode)
+    public async Task<ServiceResult<WaitlistEntryDto?>> CancelOrderAndPopWaitlistAsync(
+        string orderCode,
+        string? actingUserCode = null,
+        bool? actingIsStaffOrAdmin = null)
     {
         _db.Initialize();
         var order = await _db.BookingsOrders.Find(o => o.OrderCode == orderCode).FirstOrDefaultAsync();
         if (order == null)
             return ServiceResult<WaitlistEntryDto?>.Fail($"Không tìm thấy đơn {orderCode}.");
+
+        bool isStaff = actingIsStaffOrAdmin ?? SessionContext.IsStaffOrAdmin;
+        var actorCode = actingUserCode ?? SessionContext.UserCode;
+
+        if (!isStaff)
+        {
+            if (string.IsNullOrWhiteSpace(actorCode) ||
+                !string.Equals(order.Customer.UserCode, actorCode, StringComparison.OrdinalIgnoreCase))
+            {
+                return ServiceResult<WaitlistEntryDto?>.Fail("Bạn chỉ có thể hủy đơn hàng do chính tài khoản của mình đặt.");
+            }
+
+            if (TryParseSlotDateTime(order.BookingDate, order.TimeSlot, out var slotDt) && slotDt <= DateTime.Now)
+            {
+                return ServiceResult<WaitlistEntryDto?>.Fail(
+                    $"Đã quá khung giờ {order.TimeSlot} ngày {order.BookingDate}, khách hàng không thể tự hủy. Vui lòng liên hệ nhân viên nhà hàng.");
+            }
+        }
 
         if (order.Status is "completed" or "cancelled")
             return ServiceResult<WaitlistEntryDto?>.Fail($"Đơn {orderCode} đang ở trạng thái '{order.Status}', không thể hủy.");
@@ -576,10 +640,134 @@ public class BookingService
         }
 
         var msg = nextWaitingCustomer != null
-            ? $"Đã hủy đơn {orderCode}. Khách Waitlist tiếp theo (RPOP): {nextWaitingCustomer.FullName} — SĐT: {nextWaitingCustomer.Phone} ({nextWaitingCustomer.GuestCount} khách)."
-            : $"Đã hủy đơn {orderCode}. Hiện chưa có khách nào trong hàng đợi Waitlist cho khung giờ {order.TimeSlot}.";
+            ? $"Đã hủy đơn {orderCode}. Khách chờ tiếp theo trong danh sách: {nextWaitingCustomer.FullName} — SĐT: {nextWaitingCustomer.Phone} ({nextWaitingCustomer.GuestCount} khách)."
+            : $"Đã hủy đơn {orderCode}. Hiện chưa có khách nào trong danh sách chờ cho khung giờ {order.TimeSlot}.";
 
         return ServiceResult<WaitlistEntryDto?>.Ok(msg, nextWaitingCustomer);
+    }
+
+    /// <summary>
+    /// Tự động hủy các đơn ở trạng thái "pending" đã quá giờ đặt quá 30 phút (no-show) để nhả bàn.
+    /// </summary>
+    public async Task<int> CancelExpiredPendingOrdersAsync()
+    {
+        _db.Initialize();
+        var pendingOrders = await _db.BookingsOrders
+            .Find(o => o.Status == "pending")
+            .ToListAsync();
+
+        var cutoff = DateTime.Now.AddMinutes(-30);
+        var expiredCodes = new List<string>();
+        foreach (var o in pendingOrders)
+        {
+            if (TryParseSlotDateTime(o.BookingDate, o.TimeSlot, out var slotDt) && slotDt < cutoff)
+                expiredCodes.Add(o.OrderCode);
+        }
+
+        if (expiredCodes.Count == 0) return 0;
+
+        var res = await _db.BookingsOrders.UpdateManyAsync(
+            Builders<BookingOrderModel>.Filter.In(o => o.OrderCode, expiredCodes),
+            Builders<BookingOrderModel>.Update.Set(o => o.Status, "cancelled"));
+
+        return (int)res.ModifiedCount;
+    }
+
+    public static ServiceResult ValidateSlotDateTimeAndHours(
+        RestaurantModel restaurant,
+        string bookingDate,
+        string timeSlot)
+    {
+        if (!TryParseSlotDateTime(bookingDate, timeSlot, out var slotDt))
+            return ServiceResult.Fail("Ngày đặt hoặc khung giờ không đúng định dạng hợp lệ.");
+
+        if (slotDt.Date < DateTime.Today)
+            return ServiceResult.Fail("Không thể đặt bàn cho ngày trong quá khứ.");
+
+        if (slotDt <= DateTime.Now)
+            return ServiceResult.Fail($"Khung giờ {timeSlot} ngày {bookingDate} đã qua. Vui lòng chọn khung giờ tiếp theo hoặc ngày khác.");
+
+        if (TimeOnly.TryParseExact(timeSlot, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var chosenTime) &&
+            TimeOnly.TryParseExact(restaurant.OpenTime, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var openTime) &&
+            TimeOnly.TryParseExact(restaurant.CloseTime, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var closeTime))
+        {
+            if (chosenTime < openTime || chosenTime >= closeTime)
+            {
+                return ServiceResult.Fail(
+                    $"Khung giờ {timeSlot} nằm ngoài giờ mở cửa ({restaurant.OpenTime} – {restaurant.CloseTime}) của {restaurant.Name}.");
+            }
+        }
+
+        return ServiceResult.Ok("Hợp lệ");
+    }
+
+    private async Task<ServiceResult<List<CartItemDto>>> VerifyAndRepriceCartAsync(
+        List<CartItemDto> rawCart,
+        string targetRestaurantCode)
+    {
+        if (rawCart.Count == 0)
+            return ServiceResult<List<CartItemDto>>.Ok("Giỏ trống", []);
+
+        var codes = rawCart.Select(c => c.ItemCode).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var liveDocs = await _db.MenuItems
+            .Find(Builders<MenuItemModel>.Filter.In(m => m.ItemCode, codes))
+            .ToListAsync();
+        var liveMap = liveDocs.ToDictionary(m => m.ItemCode, StringComparer.OrdinalIgnoreCase);
+
+        var repriced = new List<CartItemDto>(rawCart.Count);
+        foreach (var cartItem in rawCart)
+        {
+            if (!liveMap.TryGetValue(cartItem.ItemCode, out var liveMenu))
+                return ServiceResult<List<CartItemDto>>.Fail($"Món '{cartItem.Name}' ({cartItem.ItemCode}) không còn tồn tại trong thực đơn.");
+
+            if (!liveMenu.IsAvailable)
+                return ServiceResult<List<CartItemDto>>.Fail($"Món '{liveMenu.Name}' hiện đã tạm ngưng phục vụ. Vui lòng xóa khỏi giỏ hàng trước khi đặt.");
+
+            if (!string.Equals(liveMenu.RestaurantCode, targetRestaurantCode, StringComparison.OrdinalIgnoreCase))
+            {
+                return ServiceResult<List<CartItemDto>>.Fail(
+                    $"Món '{liveMenu.Name}' trong giỏ thuộc chi nhánh {liveMenu.RestaurantCode}, không khớp với chi nhánh {targetRestaurantCode} bạn đang đặt. Vui lòng đổi đúng chi nhánh hoặc cập nhật lại giỏ hàng.");
+            }
+
+            var sizeObj = liveMenu.Sizes.FirstOrDefault(s =>
+                string.Equals(s.SizeCode, cartItem.SizeCode, StringComparison.OrdinalIgnoreCase));
+            double sizeExtra = sizeObj?.ExtraPrice ?? 0;
+
+            double toppingExtra = 0;
+            foreach (var topName in cartItem.Toppings)
+            {
+                var matchedTop = liveMenu.Toppings.FirstOrDefault(t =>
+                    string.Equals(t.Name.Trim(), topName.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (matchedTop != null)
+                    toppingExtra += matchedTop.Price;
+            }
+
+            repriced.Add(new CartItemDto
+            {
+                HashField = cartItem.HashField,
+                ItemCode = liveMenu.ItemCode,
+                RestaurantCode = liveMenu.RestaurantCode,
+                Name = liveMenu.Name,
+                SizeCode = cartItem.SizeCode,
+                Toppings = cartItem.Toppings,
+                Qty = cartItem.Qty,
+                UnitPrice = liveMenu.BasePrice + sizeExtra + toppingExtra
+            });
+        }
+
+        return ServiceResult<List<CartItemDto>>.Ok("Hợp lệ", repriced);
+    }
+
+    private static bool TryParseSlotDateTime(string bookingDate, string timeSlot, out DateTime slotDateTime)
+    {
+        slotDateTime = default;
+        if (!DateOnly.TryParseExact(bookingDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            return false;
+        if (!TimeOnly.TryParseExact(timeSlot, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
+            return false;
+
+        slotDateTime = date.ToDateTime(time);
+        return true;
     }
 
     private async Task<bool> HasActiveMongoBookingAsync(
